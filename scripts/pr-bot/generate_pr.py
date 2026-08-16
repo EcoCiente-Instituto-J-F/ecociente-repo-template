@@ -64,39 +64,28 @@ AreaAfetada = Literal[
 class PRAnalysis(BaseModel):
     resumo: list[str] = Field(
         description=(
-            "Resumo curto e objetivo das principais "
-            "alterações."
+            "Resumo curto e objetivo das principais alterações."
         )
     )
 
     tipos: list[TipoAlteracao] = Field(
-        description=(
-            "Tipos de alteração identificados."
-        )
+        description="Tipos de alteração identificados."
     )
 
     areas: list[AreaAfetada] = Field(
-        description=(
-            "Áreas do projeto afetadas."
-        )
+        description="Áreas do projeto afetadas."
     )
 
     alteracoes: list[str] = Field(
-        description=(
-            "Lista das principais mudanças realizadas."
-        )
+        description="Lista das principais mudanças realizadas."
     )
 
     testes: list[str] = Field(
-        description=(
-            "Passos sugeridos para testar a alteração."
-        )
+        description="Passos sugeridos para testar a alteração."
     )
 
     impacto: str = Field(
-        description=(
-            "Impacto esperado da alteração no projeto."
-        )
+        description="Impacto esperado da alteração no projeto."
     )
 
 
@@ -174,10 +163,7 @@ def get_commits():
 
     while True:
         batch = github_get(
-            (
-                f"/repos/{GITHUB_REPOSITORY}"
-                f"/pulls/{PR_NUMBER}/commits"
-            ),
+            f"/repos/{GITHUB_REPOSITORY}/pulls/{PR_NUMBER}/commits",
             {
                 "per_page": 100,
                 "page": page,
@@ -200,10 +186,7 @@ def get_files():
 
     while True:
         batch = github_get(
-            (
-                f"/repos/{GITHUB_REPOSITORY}"
-                f"/pulls/{PR_NUMBER}/files"
-            ),
+            f"/repos/{GITHUB_REPOSITORY}/pulls/{PR_NUMBER}/files",
             {
                 "per_page": 100,
                 "page": page,
@@ -262,10 +245,7 @@ def matches_any(filename, patterns):
 def should_hide_patch(filename):
     return matches_any(
         filename,
-        (
-            SENSITIVE_FILE_PATTERNS
-            + LOW_VALUE_FILE_PATTERNS
-        ),
+        SENSITIVE_FILE_PATTERNS + LOW_VALUE_FILE_PATTERNS,
     )
 
 
@@ -293,7 +273,6 @@ def redact_secrets(text):
 
     credential_pattern = re.compile(
         r"""
-        (?ix)
         (
             api[_-]?key
             |
@@ -308,7 +287,8 @@ def redact_secrets(text):
         \s*[:=]\s*
         ["']?
         [^\s"',;]+
-        """
+        """,
+        flags=re.IGNORECASE | re.VERBOSE,
     )
 
     result = credential_pattern.sub(
@@ -336,10 +316,7 @@ def prepare_commits(commits):
 
         result.append(
             {
-                "sha": commit.get(
-                    "sha",
-                    "",
-                )[:7],
+                "sha": commit.get("sha", "")[:7],
                 "message": message,
             }
         )
@@ -360,18 +337,9 @@ def prepare_files(files):
         item = {
             "filename": filename,
             "status": file.get("status"),
-            "additions": file.get(
-                "additions",
-                0,
-            ),
-            "deletions": file.get(
-                "deletions",
-                0,
-            ),
-            "changes": file.get(
-                "changes",
-                0,
-            ),
+            "additions": file.get("additions", 0),
+            "deletions": file.get("deletions", 0),
+            "changes": file.get("changes", 0),
         }
 
         patch = file.get(
@@ -379,39 +347,21 @@ def prepare_files(files):
             "",
         )
 
-        if (
-            patch
-            and not should_hide_patch(
-                filename
-            )
-        ):
-            patch = redact_secrets(
-                patch
-            )
+        if patch and not should_hide_patch(filename):
+            patch = redact_secrets(patch)
 
-            patch = patch[
-                :MAX_PATCH_PER_FILE
-            ]
+            patch = patch[:MAX_PATCH_PER_FILE]
 
-            remaining = (
-                MAX_DIFF_CHARS
-                - used_chars
-            )
+            remaining = MAX_DIFF_CHARS - used_chars
 
             if remaining > 0:
-                patch = patch[
-                    :remaining
-                ]
+                patch = patch[:remaining]
 
                 item["patch"] = patch
 
-                used_chars += len(
-                    patch
-                )
+                used_chars += len(patch)
 
-        prepared.append(
-            item
-        )
+        prepared.append(item)
 
     return prepared
 
@@ -426,30 +376,21 @@ def build_prompt(
     files,
 ):
     data = {
-        "repository":
-            GITHUB_REPOSITORY,
-
-        "pull_request":
-            PR_NUMBER,
-
-        "titulo":
-            pr.get("title"),
-
-        "branch_origem":
+        "repository": GITHUB_REPOSITORY,
+        "pull_request": PR_NUMBER,
+        "titulo": pr.get("title"),
+        "branch_origem": (
             pr
             .get("head", {})
-            .get("ref"),
-
-        "branch_destino":
+            .get("ref")
+        ),
+        "branch_destino": (
             pr
             .get("base", {})
-            .get("ref"),
-
-        "commits":
-            commits,
-
-        "arquivos":
-            files,
+            .get("ref")
+        ),
+        "commits": commits,
+        "arquivos": files,
     }
 
     return f"""
@@ -509,41 +450,28 @@ DADOS DA PULL REQUEST:
 """.strip()
 
 
-def analyze_with_gemini(
-    prompt,
-):
+def analyze_with_gemini(prompt):
     client = genai.Client(
         api_key=GEMINI_API_KEY
     )
 
-    response = (
-        client.models.generate_content(
-            model=GEMINI_MODEL,
-
-            contents=prompt,
-
-            config=types.GenerateContentConfig(
-                response_mime_type=(
-                    "application/json"
-                ),
-
-                response_schema=PRAnalysis,
-            ),
-        )
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=PRAnalysis,
+        ),
     )
 
     if not response.text:
         raise RuntimeError(
-            "O Gemini retornou "
-            "uma resposta vazia."
+            "O Gemini retornou uma resposta vazia."
         )
 
     try:
-        return (
-            PRAnalysis
-            .model_validate_json(
-                response.text
-            )
+        return PRAnalysis.model_validate_json(
+            response.text
         )
 
     except Exception as error:
@@ -556,8 +484,7 @@ def analyze_with_gemini(
         )
 
         raise RuntimeError(
-            "O Gemini retornou JSON "
-            "em formato inesperado."
+            "O Gemini retornou JSON em formato inesperado."
         ) from error
 
 
@@ -568,8 +495,7 @@ def analyze_with_gemini(
 def bullet_list(items):
     if not items:
         return (
-            "* Nenhuma alteração "
-            "relevante identificada."
+            "* Nenhuma alteração relevante identificada."
         )
 
     return "\n".join(
@@ -582,9 +508,7 @@ def checkbox_list(
     options,
     selected,
 ):
-    selected = set(
-        selected
-    )
+    selected = set(selected)
 
     return "\n".join(
         (
@@ -599,18 +523,13 @@ def checkbox_list(
 def numbered_list(items):
     if not items:
         return (
-            "1. Revisar a alteração "
-            "conforme o contexto "
+            "1. Revisar a alteração conforme o contexto "
             "da Pull Request."
         )
 
     return "\n".join(
-        (
-            f"{index}. "
-            f"{item}"
-        )
-        for index, item
-        in enumerate(
+        f"{index}. {item}"
+        for index, item in enumerate(
             items,
             start=1,
         )
@@ -679,18 +598,12 @@ def replace_automatic_section(
 ):
     if START_MARKER not in body:
         raise RuntimeError(
-            (
-                "Marcador não encontrado: "
-                f"{START_MARKER}"
-            )
+            f"Marcador não encontrado: {START_MARKER}"
         )
 
     if END_MARKER not in body:
         raise RuntimeError(
-            (
-                "Marcador não encontrado: "
-                f"{END_MARKER}"
-            )
+            f"Marcador não encontrado: {END_MARKER}"
         )
 
     start_index = body.index(
@@ -701,19 +614,14 @@ def replace_automatic_section(
         END_MARKER
     )
 
-    if (
-        start_index
-        >= end_index
-    ):
+    if start_index >= end_index:
         raise RuntimeError(
-            "Os marcadores do PR Bot "
-            "estão em ordem inválida."
+            "Os marcadores do PR Bot estão em ordem inválida."
         )
 
     before = body[
         :
-        start_index
-        + len(START_MARKER)
+        start_index + len(START_MARKER)
     ]
 
     after = body[
@@ -731,10 +639,7 @@ def update_pull_request(
     body,
 ):
     return github_patch(
-        (
-            f"/repos/{GITHUB_REPOSITORY}"
-            f"/pulls/{PR_NUMBER}"
-        ),
+        f"/repos/{GITHUB_REPOSITORY}/pulls/{PR_NUMBER}",
         {
             "body": body
         },
@@ -751,13 +656,11 @@ def main():
     )
 
     print(
-        f"Repositório: "
-        f"{GITHUB_REPOSITORY}"
+        f"Repositório: {GITHUB_REPOSITORY}"
     )
 
     print(
-        f"Pull Request: "
-        f"#{PR_NUMBER}"
+        f"Pull Request: #{PR_NUMBER}"
     )
 
     print(
@@ -778,26 +681,20 @@ def main():
 
     files = get_files()
 
-    prepared_commits = (
-        prepare_commits(
-            commits
-        )
+    prepared_commits = prepare_commits(
+        commits
     )
 
-    prepared_files = (
-        prepare_files(
-            files
-        )
+    prepared_files = prepare_files(
+        files
     )
 
     print(
-        f"{len(prepared_commits)} "
-        "commits encontrados."
+        f"{len(prepared_commits)} commits encontrados."
     )
 
     print(
-        f"{len(prepared_files)} "
-        "arquivos alterados encontrados."
+        f"{len(prepared_files)} arquivos alterados encontrados."
     )
 
     prompt = build_prompt(
@@ -807,24 +704,19 @@ def main():
     )
 
     print(
-        f"Enviando análise "
-        f"para {GEMINI_MODEL}..."
+        f"Enviando análise para {GEMINI_MODEL}..."
     )
 
-    analysis = (
-        analyze_with_gemini(
-            prompt
-        )
+    analysis = analyze_with_gemini(
+        prompt
     )
 
     print(
         "Análise recebida."
     )
 
-    automatic_markdown = (
-        build_automatic_markdown(
-            analysis
-        )
+    automatic_markdown = build_automatic_markdown(
+        analysis
     )
 
     current_body = (
@@ -832,27 +724,20 @@ def main():
         or ""
     )
 
-    new_body = (
-        replace_automatic_section(
-            current_body,
-            automatic_markdown,
-        )
+    new_body = replace_automatic_section(
+        current_body,
+        automatic_markdown,
     )
 
-    if (
-        new_body
-        == current_body
-    ):
+    if new_body == current_body:
         print(
-            "A descrição da PR "
-            "já está atualizada."
+            "A descrição da PR já está atualizada."
         )
 
         return
 
     print(
-        "Atualizando descrição "
-        "da Pull Request..."
+        "Atualizando descrição da Pull Request..."
     )
 
     update_pull_request(
@@ -860,8 +745,7 @@ def main():
     )
 
     print(
-        "Pull Request atualizada "
-        "com sucesso."
+        "Pull Request atualizada com sucesso."
     )
 
 
