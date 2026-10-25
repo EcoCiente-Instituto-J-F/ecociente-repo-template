@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/card-readme.png" alt="Card do repositório" width="100%">
+</p>
+
 <!--
   TEMPLATE — troque os placeholders antes de usar (busque por {{ )
     {{OWNER}}          usuário/organização no GitHub
